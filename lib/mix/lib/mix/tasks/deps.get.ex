@@ -1,6 +1,8 @@
 defmodule Mix.Tasks.Deps.Get do
   use Mix.Task
 
+  import Mix.Dep, only: [load_on_environment: 1, check_lock: 1]
+
   @shortdoc "Gets all out of date dependencies"
 
   @moduledoc """
@@ -18,6 +20,16 @@ defmodule Mix.Tasks.Deps.Get do
   def run(args) do
     unless "--no-archives-check" in args do
       Mix.Task.run("archive.check", args)
+    end
+    if "--strict" in args do
+      load_on_environment([])
+      |> Enum.sort_by(& &1.app)
+      |> Enum.each(fn dep ->
+        case check_lock(dep) do
+          %Mix.Dep{status: {:lockmismatch, _}} -> Mix.raise("Lock mismatch")
+          _ -> :ok
+        end
+      end)
     end
 
     Mix.Project.get!()

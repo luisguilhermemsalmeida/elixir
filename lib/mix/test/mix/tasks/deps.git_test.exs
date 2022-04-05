@@ -270,6 +270,33 @@ defmodule Mix.Tasks.DepsGitTest do
     purge([GitRepo, GitRepo.MixProject])
   end
 
+  test "raise when git repo demands update and --strict is set" do
+    Mix.Project.push(GitApp)
+    [last, first | _] = get_git_repo_revs("git_repo")
+
+    in_fixture("no_mixfile", fn ->
+      Mix.Dep.Lock.write(%{git_repo: {:git, fixture_path("git_repo"), first, []}})
+
+      Mix.Tasks.Deps.Get.run([])
+      refute File.exists?("deps/git_repo/lib/git_repo.ex")
+      assert File.read!("mix.lock") =~ first
+
+      # Update the lock and now we should get an error
+      Mix.Dep.Lock.write(%{git_repo: {:git, fixture_path("git_repo"), last, []}})
+
+      assert_raise Mix.Error, fn -> Mix.Tasks.Deps.Loadpaths.run([]) end
+
+      # Flush the errors we got, move to a clean slate
+      Mix.shell().flush
+      Mix.Task.clear()
+
+      # Calling get with --strict option should raise
+      catch_error(Mix.Tasks.Deps.Get.run(["--strict"]))
+    end)
+  after
+    purge([GitRepo, GitRepo.MixProject])
+  end
+
   @tag :git_sparse
   test "updates the repo when sparse is turned off" do
     Process.put(:git_repo_opts, sparse: "sparse_dir")
@@ -413,6 +440,31 @@ defmodule Mix.Tasks.DepsGitTest do
       assert File.exists?("deps/git_repo/lib/git_repo.ex")
       assert File.read!("mix.lock") =~ last
       refute File.exists?("_build/dev/lib/git_repo/.mix/compile.fetch")
+    end)
+  after
+    purge([GitRepo, GitRepo.MixProject])
+  end
+
+  test "raises when fetching children on get when strict option is set" do
+    Mix.Project.push(DepsOnGitApp)
+
+    # Get Git repo first revision
+    [last, first | _] = get_git_repo_revs("deps_on_git_repo")
+
+    in_fixture("no_mixfile", fn ->
+      Mix.Dep.Lock.write(%{deps_on_git_repo: {:git, fixture_path("deps_on_git_repo"), first, []}})
+
+      Mix.Tasks.Deps.Get.run([])
+      assert File.exists?("deps/deps_on_git_repo/mix.exs")
+      refute File.exists?("deps/git_repo/lib/git_repo.ex")
+      assert File.read!("mix.lock") =~ first
+
+      Mix.Task.clear()
+      Mix.State.clear_cache()
+      purge([DepsOnGitRepo.MixProject])
+
+      Mix.Dep.Lock.write(%{deps_on_git_repo: {:git, fixture_path("deps_on_git_repo"), last, []}})
+      catch_error(Mix.Tasks.Deps.Get.run([]))
     end)
   after
     purge([GitRepo, GitRepo.MixProject])
